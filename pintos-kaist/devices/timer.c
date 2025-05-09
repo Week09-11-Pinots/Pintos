@@ -20,6 +20,10 @@
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+static struct list sleep_list;
+int64_t closest_tick=NULL;
+
+
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -28,24 +32,27 @@ static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
+static void wake_up(int64_t cur_tick);
 
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
+// pit= 프로그래밍된 카운트에 도달할 때 출력 신호를 생성하는 카운터. 
 void
 timer_init (void) {
-	/* 8254 input frequency divided by TIMER_FREQ, rounded to
-	   nearest. */
+	/* 8254 입력 주파수를 Timer_FREQ로 나눈 값을 가장 가까운 값으로 반올림  */
 	uint16_t count = (1193180 + TIMER_FREQ / 2) / TIMER_FREQ;
 
-	outb (0x43, 0x34);    /* CW: counter 0, LSB then MSB, mode 2, binary. */
+	outb (0x43, 0x34);    /* CW: counter 0, LSB(최하위 비트) then MSB(최상위 비트), mode 2, binary. */
 	outb (0x40, count & 0xff);
 	outb (0x40, count >> 8);
+	list_init (&sleep_list);
 
 	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
+/* 짧은 딜레이를 수행하기 위한 loops_per_tick 교정 */
 void
 timer_calibrate (void) {
 	unsigned high_bit, test_bit;
@@ -87,15 +94,34 @@ timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
+bool compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
+	struct thread *t_a = list_entry(a, struct thread, elem);
+	struct thread *t_b = list_entry(b, struct thread, elem);
+	return t_a->wakeup_tick<t_b->wakeup_tick;
+}
+
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
-	int64_t start = timer_ticks ();
-
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+
+    if (ticks <= 0) return; // 0 이하면 바로 리턴
+
+    struct thread *cur = thread_current();
+    cur->wakeup_tick = timer_ticks() + ticks; 
+
+	enum intr_level old_level = intr_disable();//인터럽트 끔
+	if(closest_tick ==NULL || closest_tick > cur->wakeup_tick){
+		closest_tick=cur->wakeup_tick; //깨울 틱 설정 
+	}
+
+    list_insert_ordered(&sleep_list, &cur->elem, compare, NULL);
+    thread_block();
+
+    intr_set_level(old_level);
+
 }
+
 
 /* Suspends execution for approximately MS milliseconds. */
 void
@@ -122,10 +148,39 @@ timer_print_stats (void) {
 }
 
 /* Timer interrupt handler. */
+// 글로벌 틱을 보고 꺠워야 할 틱을 깨우기... 
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
-	thread_tick ();
+	thread_tick();
+	int64_t cur_tick= timer_ticks();
+
+	//현재 틱이 블락된 스레드 로컬 틱이랑 같거나 크면 
+	if(closest_tick !=NULL && cur_tick>=closest_tick) 
+		wake_up(cur_tick);
+}
+
+static void wake_up(int64_t cur_tick){
+	struct list_elem *e;
+
+	while(!list_empty(&sleep_list)){
+		struct list_elem *e = list_begin(&sleep_list);
+		//gloabl 틱과 sleep_list에 있는 스레드들의 틱을 비교 
+		struct thread * t =list_entry(e, struct thread, elem);
+		
+		if(t->wakeup_tick <= timer_ticks()){
+			//해당 thread를 sleep list에서 빼고 ready_list에 집어넣기 
+			list_remove(e);
+			thread_unblock(t);
+		}else{
+			break;
+		}
+	}
+	if (list_empty(&sleep_list))
+    	closest_tick = NULL;
+	else
+		closest_tick = list_entry(list_begin(&sleep_list), struct thread, elem)->wakeup_tick;
+
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

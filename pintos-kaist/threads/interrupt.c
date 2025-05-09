@@ -224,6 +224,8 @@ register_handler (uint8_t vec_no, int dpl, enum intr_level level,
 /* Registers external interrupt VEC_NO to invoke HANDLER, which
    is named NAME for debugging purposes.  The handler will
    execute with interrupts disabled. */
+/* 디버깅을 위한 NAME 핸들러를 invoke하기 위해 VEC_NO 외부 인터럽트 등록. 핸들러는 인터럽트가 불가능해 졌을 때 실행된다.
+*/
 void
 intr_register_ext (uint8_t vec_no, intr_handler_func *handler,
 		const char *name) {
