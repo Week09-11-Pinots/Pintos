@@ -234,20 +234,24 @@ void thread_unblock(struct thread *t)
 {
 	enum intr_level old_level;
 	struct thread *cur = thread_current(); // 현재 실행중인 쓰레드
+	printf("현재 쓰레드 상태 : %d\n", cur->status);
 
 	ASSERT(is_thread(t));
 
 	old_level = intr_disable(); // 인터럽트 끄기 -> 레이스 컨디션 방지
 	ASSERT(t->status == THREAD_BLOCKED);
+	t->status = THREAD_READY;
 	list_insert_ordered(&ready_list, &t->elem, compare_priority, NULL); // 우선순위 순으로 레디 큐에 저장
 
+	printf("새 쓰레드 진입 레디 큐에 넣음\n");
 	if (thread_get_priority() < t->priority) // 레디 큐에 넣을 쓰레드의 우선순위가 더 높은 경우
 	{
+		printf("양보 발생\n");
 		thread_yield(); // 현재 쓰레드는 CPU 양보
 	}
+	printf("AA\n");
 
 	// list_push_back(&ready_list, &t->elem);
-	t->status = THREAD_READY;
 	intr_set_level(old_level); // 인터럽트 다시 켜기
 }
 
@@ -275,11 +279,12 @@ thread_current(void)
 	struct thread *t = running_thread();
 
 	/* Make sure T is really a thread.
-	   If either of these assertions fire, then your thread may
-	   have overflowed its stack.  Each thread has less than 4 kB
-	   of stack, so a few big automatic arrays or moderate
-	   recursion can cause stack overflow. */
+	If either of these assertions fire, then your thread may
+	have overflowed its stack.  Each thread has less than 4 kB
+	of stack, so a few big automatic arrays or moderate
+	recursion can cause stack overflow. */
 	ASSERT(is_thread(t));
+	// printf("thread_current 실행, 상태 = %d\n", t->status);
 	ASSERT(t->status == THREAD_RUNNING);
 
 	return t;
@@ -317,11 +322,13 @@ void thread_yield(void)
 
 	ASSERT(!intr_context());
 
+	printf("BB\n");
 	old_level = intr_disable();
 	if (curr != idle_thread)
 		// list_push_back(&ready_list, &curr->elem);
 		list_insert_ordered(&ready_list, &curr->elem, compare_priority, NULL);
 	do_schedule(THREAD_READY);
+	// printf("CC\n");
 	intr_set_level(old_level);
 }
 
@@ -549,6 +556,7 @@ thread_launch(struct thread *th)
 static void
 do_schedule(int status)
 {
+	printf("do schedule\n");
 	ASSERT(intr_get_level() == INTR_OFF);
 	ASSERT(thread_current()->status == THREAD_RUNNING);
 	while (!list_empty(&destruction_req))
@@ -566,6 +574,8 @@ schedule(void)
 {
 	struct thread *curr = running_thread();
 	struct thread *next = next_thread_to_run();
+
+	printf("curr : %s, next : %s", curr, next);
 
 	ASSERT(intr_get_level() == INTR_OFF);
 	ASSERT(curr->status != THREAD_RUNNING);
