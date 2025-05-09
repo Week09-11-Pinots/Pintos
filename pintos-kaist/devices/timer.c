@@ -116,7 +116,7 @@ void timer_sleep(int64_t ticks)
 
 	target->block_threads = cur;				 // 블락되는 쓰레드
 	target->wakeup_tick = timer_ticks() + ticks; // 깨울 틱 저장
-	// printf("깨울 틱 : %d\n", target->wakeup_tick);
+	printf("깨울 틱 : %d\n", target->wakeup_tick);
 
 	enum intr_level old_level = intr_disable(); // 인터럽트 끄기 -> 레이스 컨디션을 막기 위해 먼저
 	if (closet_tick == NULL || closet_tick > target->wakeup_tick)
@@ -188,6 +188,7 @@ static void wake_up(int64_t cur_tick)
 		struct list_elem *next = list_next(e);
 		if (entry->wakeup_tick <= cur_tick)
 		{
+			printf("wakeup\n");
 			thread_unblock(entry->block_threads);
 			list_remove(e);
 		}
