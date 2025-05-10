@@ -108,28 +108,23 @@ void timer_sleep(int64_t ticks)
 {
 
 	ASSERT(intr_get_level() == INTR_ON);
-	// while (timer_elapsed(start) < ticks)
-	// thread_yield();
 
 	struct thread *cur = thread_current(); // 현재 쓰레드 가져오기
 	block_thread *target = malloc(sizeof(block_thread));
 
 	target->block_threads = cur;				 // 블락되는 쓰레드
 	target->wakeup_tick = timer_ticks() + ticks; // 깨울 틱 저장
-	printf("깨울 틱 : %d\n", target->wakeup_tick);
+	dprintf("깨울 틱 : %d\n", target->wakeup_tick);
 
 	enum intr_level old_level = intr_disable(); // 인터럽트 끄기 -> 레이스 컨디션을 막기 위해 먼저
 	if (closet_tick == NULL || closet_tick > target->wakeup_tick)
 	{
 		closet_tick = target->wakeup_tick;
-		// printf("깨울 틱 설정 : %d", closet_tick);
 	}
 
 	list_insert_ordered(&block_thread_list, &target->elem, compare_tick, NULL);
-	// printf("쓰레드 인서트\n");
 	thread_block();			   // 쓰레드 블락
 	intr_set_level(old_level); // 원래 상태 복원
-							   // printf("쓰레드 블락 완료\n");
 }
 
 static bool compare_tick(const struct list_elem *a, const struct list_elem *b, void *aux)
@@ -172,6 +167,7 @@ timer_interrupt(struct intr_frame *args UNUSED)
 	thread_tick();
 	int64_t cur_tick = timer_ticks();
 	// printf("현재 틱 : %d\n", cur_tick);
+	// dprintf("실행 쓰레드 %s, 우선순위 : %d\n", thread_name(), thread_get_priority());
 	if (closet_tick != NULL && cur_tick >= closet_tick) // 현재 틱이 블락된 쓰레드 로컬 틱이랑 같거나 크면
 	{
 		// printf("wakeup\n");
@@ -188,9 +184,9 @@ static void wake_up(int64_t cur_tick)
 		struct list_elem *next = list_next(e);
 		if (entry->wakeup_tick <= cur_tick)
 		{
-			printf("wakeup\n");
-			thread_unblock(entry->block_threads);
+			dprintf("wakeup\n");
 			list_remove(e);
+			thread_unblock(entry->block_threads);
 		}
 		else
 			break;
