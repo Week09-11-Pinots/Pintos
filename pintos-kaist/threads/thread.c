@@ -323,7 +323,6 @@ void thread_yield(void)
 	dprintf("현재 레디 리스트 사이즈 : %d\n", list_size(&ready_list));
 
 	ASSERT(!intr_context());
-	// ASSERT(curr->elem.prev == NULL && curr->elem.next == NULL && strcmp("idle", thread_name()) != 0);
 
 	old_level = intr_disable();
 	if (curr != idle_thread)
@@ -347,6 +346,7 @@ void compare_cur_next_priority(void)
 		return;
 	}
 
+	list_sort(&ready_list, compare_priority, NULL);
 	struct list_elem *e = list_front(&ready_list);
 
 	if (compare_priority(e, &thread_current()->priority, NULL))
@@ -452,7 +452,10 @@ init_thread(struct thread *t, const char *name, int priority)
 	strlcpy(t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
+	t->original_priority = priority;
 	t->magic = THREAD_MAGIC;
+	list_init(&t->lock_list);
+	list_init(&t->donation_list);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
