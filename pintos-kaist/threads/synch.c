@@ -32,22 +32,33 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+typedef struct __donation__
+{
+	struct list_elem elem;
+	int priority;
+	struct thread *donor;
+	struct lock *lock;
+} donation;
+
 static bool compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
+static bool compare_priority_for_donate(const struct list_elem *a, const struct list_elem *b, void *aux);
 static bool compare_priority_for_cond(const struct list_elem *a,
 									  const struct list_elem *b,
 									  void *aux UNUSED);
-
-// typedef struct sema_wait
-// {
-// 	struct theread *thread;
-// 	struct list_elem elem;
-// } sema_wait_thread;
+static donation *create_donation(struct thread *thread, struct lock *lock);
 
 static bool compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux)
 {
 	struct thread *t1 = list_entry(a, struct thread, elem);
 	struct thread *t2 = list_entry(b, struct thread, elem);
 
+	return t1->priority > t2->priority;
+}
+
+static bool compare_priority_for_donate(const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+	donation *t1 = list_entry(a, donation, elem);
+	donation *t2 = list_entry(b, donation, elem);
 	return t1->priority > t2->priority;
 }
 
@@ -171,72 +182,99 @@ sema_test_helper(void *sema_)
 	}
 }
 
-/* Initializes LOCK.  A lock can be held by at most a single
-   thread at any given time.  Our locks are not "recursive", that
-   is, it is an error for the thread currently holding a lock to
-   try to acquire that lock.
+/* LOCK을 초기화합니다. 락은 주어진 시간에 최대 하나의 스레드만 소유할 수 있습니다.
+	우리의 락은 "재귀적"이지 않으며, 즉 현재 락을 소유하고 있는 스레드가
+	해당 락을 다시 획득하려고 시도하는 것은 오류입니다.
 
-   A lock is a specialization of a semaphore with an initial
-   value of 1.  The difference between a lock and such a
-   semaphore is twofold.  First, a semaphore can have a value
-   greater than 1, but a lock can only be owned by a single
-   thread at a time.  Second, a semaphore does not have an owner,
-   meaning that one thread can "down" the semaphore and then
-   another one "up" it, but with a lock the same thread must both
-   acquire and release it.  When these restrictions prove
-   onerous, it's a good sign that a semaphore should be used,
-   instead of a lock. */
+	락은 초기 값이 1인 세마포어의 특수화된 형태입니다. 락과 세마포어의 차이점은 두 가지입니다.
+	첫째, 세마포어는 1보다 큰 값을 가질 수 있지만, 락은 한 번에 하나의 스레드만 소유할 수 있습니다.
+	둘째, 세마포어는 소유자가 없으므로 한 스레드가 세마포어를 "다운"하고 다른 스레드가 "업"할 수 있지만,
+	락은 동일한 스레드가 락을 획득하고 해제해야 합니다. 이러한 제한이 불편하다면,
+	락 대신 세마포어를 사용하는 것이 좋습니다. */
 void lock_init(struct lock *lock)
 {
 	ASSERT(lock != NULL);
 
 	lock->holder = NULL;
-	sema_init(&lock->semaphore, 1);
+	sema_init(&lock->semaphore, 1); // 바이너리 세마포어
 }
 
-/* Acquires LOCK, sleeping until it becomes available if
-   necessary.  The lock must not already be held by the current
-   thread.
+/* LOCK을 획득하며, 필요하다면 사용할 수 있을 때까지 대기 상태로 들어갑니다.
+	현재 스레드가 이미 LOCK을 보유하고 있어서는 안 됩니다.
 
-   This function may sleep, so it must not be called within an
-   interrupt handler.  This function may be called with
-   interrupts disabled, but interrupts will be turned back on if
-   we need to sleep. */
+	이 함수는 대기 상태로 들어갈 수 있으므로 인터럽트 핸들러 내에서 호출되어서는 안 됩니다.
+	이 함수는 인터럽트가 비활성화된 상태에서 호출될 수 있지만, 대기 상태로 들어가면
+	다음에 스케줄된 스레드가 인터럽트를 다시 활성화할 가능성이 높습니다. */
 void lock_acquire(struct lock *lock)
 {
 	ASSERT(lock != NULL);
 	ASSERT(!intr_context());
 	ASSERT(!lock_held_by_current_thread(lock));
 
-	sema_down(&lock->semaphore);
-	lock->holder = thread_current();
+	struct thread *cur = thread_current(); // 현재 쓰레드
+	struct lock *pending = lock;		   // 대기하는 락
+	cur->pending_lock = lock;			   // 현재 쓰레드의 대기 락 설정
+
+	while (pending != NULL) // 재귀적으로 가자
+	{
+		struct thread *holder = pending->holder;						// 대기하는 락의 홀더
+		if (holder == NULL || thread_get_priority() < holder->priority) // 홀더의 우선순위가 자신보다 크다면 기부 안해도 됨
+			break;
+
+		donation *donate = create_donation(cur, pending);
+
+		if (holder->priority < thread_get_priority()) // 홀더의 우선순위 갱신
+		{
+			holder->priority = thread_get_priority();
+		}
+
+		list_insert_ordered(&holder->donation_list, &donate->elem, compare_priority_for_donate, NULL);
+		if (holder->pending_lock != NULL)
+			list_sort(&holder->pending_lock->semaphore.waiters, compare_priority, NULL);
+
+		pending = holder->pending_lock; // 홀더가 대기하는 다른 락 확인
+	}
+
+	compare_cur_next_priority(); // 우선순위가 기부되었으니 스케줄링 새로 실행
+	sema_down(&lock->semaphore); // 락을 잡으려고 시도하고, 이미 잡혀있다면 대기함
+	cur->pending_lock = NULL;
+	lock->holder = thread_current(); // 현재 스레드가 락을 잡음
 }
 
-/* Tries to acquires LOCK and returns true if successful or false
-   on failure.  The lock must not already be held by the current
-   thread.
+static donation *create_donation(struct thread *thread, struct lock *lock)
+{
+	donation *donate = malloc(sizeof(donation)); // 기부자 목록도 유지해야함 !!
+	donate->priority = thread_get_priority();	 // 기부받은 우선순위 저장 -> 복구를 위해서
+	donate->donor = thread;						 // 기부자 저장
+	donate->lock = lock;						 // 락 저장
+	ASSERT(donate != NULL);
+	return donate;
+}
 
-   This function will not sleep, so it may be called within an
-   interrupt handler. */
+/* LOCK을 획득하려 시도하며, 성공하면 true를 반환하고 실패하면 false를 반환합니다.
+	현재 스레드가 이미 LOCK을 보유하고 있어서는 안 됩니다.
+
+	이 함수는 대기 상태로 들어가지 않으므로 인터럽트 핸들러 내에서 호출될 수 있습니다. */
 bool lock_try_acquire(struct lock *lock)
 {
 	bool success;
 
 	ASSERT(lock != NULL);
-	ASSERT(!lock_held_by_current_thread(lock));
+	ASSERT(!lock_held_by_current_thread(lock)); // 실행 쓰레드가 이 락을 갖고있는지 검사
 
+	/* 현재 락을 누군가가 갖고 있다면 false, 아니라면 true */
 	success = sema_try_down(&lock->semaphore);
 	if (success)
+		/* 현재 락의 홀더는 실행 쓰레드가 됨 */
 		lock->holder = thread_current();
 	return success;
 }
 
-/* Releases LOCK, which must be owned by the current thread.
-   This is lock_release function.
+/* 현재 스레드가 소유하고 있는 LOCK을 해제합니다.
+	이 함수는 lock_release 함수입니다.
 
-   An interrupt handler cannot acquire a lock, so it does not
-   make sense to try to release a lock within an interrupt
-   handler. */
+	인터럽트 핸들러는 락을 획득할 수 없으므로, 락을 해제하려고 시도하는 것도
+	의미가 없습니다. */
 void lock_release(struct lock *lock)
 {
 	ASSERT(lock != NULL);
@@ -246,9 +284,9 @@ void lock_release(struct lock *lock)
 	sema_up(&lock->semaphore);
 }
 
-/* Returns true if the current thread holds LOCK, false
-   otherwise.  (Note that testing whether some other thread holds
-   a lock would be racy.) */
+/* 현재 스레드가 LOCK을 보유하고 있으면 true를 반환하고,
+	그렇지 않으면 false를 반환합니다.
+	(다른 스레드가 락을 보유하고 있는지 테스트하는 것은 경쟁 상태를 초래할 수 있습니다.) */
 bool lock_held_by_current_thread(const struct lock *lock)
 {
 	ASSERT(lock != NULL);

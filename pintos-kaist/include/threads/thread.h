@@ -91,10 +91,15 @@ struct thread
 	tid_t tid;				   /* Thread identifier. */
 	enum thread_status status; /* Thread state. */
 	char name[16];			   /* Name (for debugging purposes). */
-	int priority;			   /* Priority. */
+	int priority;			   /* 기부받은 우선순위 */
+	int original_priority;	   /* 원래의 우선순위 */
 
 	/* Shared between thread.c and synch.c. */
-	struct list_elem elem; /* List element. */
+	struct list_elem elem;	   /* List element. */
+	struct list lock_list;	   /* 쥐고있는 락 리스트 -> 정말 필요한가? -> 락을 놓는다고 해서
+	현재 작업이 전부다 끝난건 아니다 !! 따라서 해제를 위해 필요함 */
+	struct list donation_list; /* 이 쓰레드에 기부해준 쓰레드들 */
+	struct lock *pending_lock; /* 대기하고 있는 락 */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
