@@ -240,7 +240,6 @@ void thread_block(void)
    update other data. */
 void thread_unblock(struct thread *t)
 {
-	dprintf("unblock 발생 !!\n");
 	enum intr_level old_level;
 
 	ASSERT(is_thread(t));
@@ -248,7 +247,6 @@ void thread_unblock(struct thread *t)
 	old_level = intr_disable(); // 인터럽트 끄기 -> 레이스 컨디션 방지
 	ASSERT(t->status == THREAD_BLOCKED);
 
-	dprintf("현재 레디 리스트 사이즈 : %d\n", list_size(&ready_list));
 	list_insert_ordered(&ready_list, &t->elem, compare_priority, NULL); // 우선순위 순으로 레디 큐에 저장
 	t->status = THREAD_READY;
 
@@ -316,11 +314,11 @@ void thread_exit(void)
    may be scheduled again immediately at the scheduler's whim. */
 void thread_yield(void)
 {
-	dprintf("thread_yield\n");
+	// dprintf("thread_yield\n");
 	struct thread *curr = thread_current();
 	enum intr_level old_level;
-	dprintf("현재 실행 쓰레드 : %s\n", thread_name());
-	dprintf("현재 레디 리스트 사이즈 : %d\n", list_size(&ready_list));
+	// dprintf("현재 실행 쓰레드 : %s\n", thread_name());
+	// dprintf("현재 레디 리스트 사이즈 : %d\n", list_size(&ready_list));
 
 	ASSERT(!intr_context());
 
@@ -453,9 +451,9 @@ init_thread(struct thread *t, const char *name, int priority)
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
 	t->original_priority = priority;
+	t->pending_lock = NULL;
 	t->magic = THREAD_MAGIC;
-	list_init(&t->lock_list);
-	list_init(&t->donation_list);
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -576,22 +574,16 @@ thread_launch(struct thread *th)
 static void
 do_schedule(int status)
 {
-	// dprintf("do_schecule\n");
 	ASSERT(intr_get_level() == INTR_OFF);
 	ASSERT(thread_current()->status == THREAD_RUNNING);
 	while (!list_empty(&destruction_req))
 	{
-		// dprintf("while\n");
 		struct thread *victim =
 			list_entry(list_pop_front(&destruction_req), struct thread, elem);
 		palloc_free_page(victim);
 	}
-	// dprintf("while end\n");
 	thread_current()->status = status;
-	// dprintf("다음 실행 스레드 : %s\n", next_thread_to_run()->name);
 	schedule();
-	// dprintf("schdule end\n");
-	// dprintf("현재 실행 쓰레드 : %s\n", thread_name());
 }
 
 static void

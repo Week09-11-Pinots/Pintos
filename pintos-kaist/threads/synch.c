@@ -46,6 +46,10 @@ static bool compare_priority_for_cond(const struct list_elem *a,
 									  const struct list_elem *b,
 									  void *aux UNUSED);
 static donation *create_donation(struct thread *thread, struct lock *lock);
+static void remove_donation_for_lock(struct lock *);
+static void recalc_priority();
+
+int idx = 0;
 
 static bool compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux)
 {
@@ -212,15 +216,27 @@ void lock_acquire(struct lock *lock)
 	ASSERT(!lock_held_by_current_thread(lock));
 
 	struct thread *cur = thread_current(); // 현재 쓰레드
-	struct lock *pending = lock;		   // 대기하는 락
-	cur->pending_lock = lock;			   // 현재 쓰레드의 대기 락 설정
+	struct lock *pending = NULL;
+
+	if (lock->holder)
+	{
+		cur->pending_lock = lock;	 // 현재 쓰레드의 대기 락 설정
+		pending = cur->pending_lock; // 대기하는 락
+		ASSERT(cur->pending_lock != NULL);
+	}
+	ASSERT(lock != NULL);
 
 	while (pending != NULL) // 재귀적으로 가자
 	{
 		struct thread *holder = pending->holder;						// 대기하는 락의 홀더
 		if (holder == NULL || thread_get_priority() < holder->priority) // 홀더의 우선순위가 자신보다 크다면 기부 안해도 됨
+		{
 			break;
+		}
 
+		dprintf("===============while loop====================\n");
+		dprintf("me : %s, priority = %d\n", cur->name, cur->priority);
+		dprintf("holder = %s, holder priority = %d\n", holder->name, holder->priority);
 		donation *donate = create_donation(cur, pending);
 
 		if (holder->priority < thread_get_priority()) // 홀더의 우선순위 갱신
@@ -228,14 +244,19 @@ void lock_acquire(struct lock *lock)
 			holder->priority = thread_get_priority();
 		}
 
-		list_insert_ordered(&holder->donation_list, &donate->elem, compare_priority_for_donate, NULL);
+		dprintf("after donate holder = %s, holder priority = %d\n", holder->name, holder->priority);
+		dprintf("=================loop==================\n");
+
+		list_insert_ordered(&holder->donations, &donate->elem, compare_priority_for_donate, NULL);
 		if (holder->pending_lock != NULL)
 			list_sort(&holder->pending_lock->semaphore.waiters, compare_priority, NULL);
 
 		pending = holder->pending_lock; // 홀더가 대기하는 다른 락 확인
+		if (pending == NULL)
+			dprintf("holder %s's pending is NULL\n", holder->name);
 	}
 
-	compare_cur_next_priority(); // 우선순위가 기부되었으니 스케줄링 새로 실행
+	// compare_cur_next_priority(); // 우선순위가 기부되었으니 스케줄링 새로 실행
 	sema_down(&lock->semaphore); // 락을 잡으려고 시도하고, 이미 잡혀있다면 대기함
 	cur->pending_lock = NULL;
 	lock->holder = thread_current(); // 현재 스레드가 락을 잡음
@@ -279,9 +300,54 @@ void lock_release(struct lock *lock)
 {
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
+	ASSERT(lock->holder != NULL);
+
+	if (strcmp(lock->holder->name, "medium") == 0)
+	{
+		dprintf("Medium lock release\n");
+		dprintf("lock holder = %s\n", lock->holder->name);
+		if (lock->holder->pending_lock == NULL)
+			dprintf("holder's pending lock is NULL\n");
+		else
+			dprintf("holder's pending lock holder is %s", lock->holder->pending_lock->holder->name);
+	}
+
+	remove_donation_for_lock(lock);
+
+	recalc_priority();
 
 	lock->holder = NULL;
 	sema_up(&lock->semaphore);
+	compare_cur_next_priority();
+}
+
+static void remove_donation_for_lock(struct lock *lock)
+{
+	struct list_elem *e;
+	struct thread *cur = thread_current();
+
+	for (e = list_begin(&cur->donations); e != list_end(&cur->donations); e = list_next(e))
+	{
+		donation *d = list_entry(e, donation, elem);
+		if (d->lock == lock)
+		{
+			list_remove(&d->elem);
+		}
+	}
+}
+
+static void recalc_priority()
+{
+	struct thread *cur = thread_current();
+
+	cur->priority = cur->original_priority;
+	if (list_empty(&cur->donations))
+		return;
+
+	list_sort(&cur->donations, compare_priority_for_donate, NULL);
+	int front_priority = list_entry(list_front(&cur->donations), donation, elem)->priority;
+	if (cur->priority < front_priority)
+		cur->priority = front_priority;
 }
 
 /* 현재 스레드가 LOCK을 보유하고 있으면 true를 반환하고,
