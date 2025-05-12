@@ -81,6 +81,8 @@ static uint64_t gdt[3] = {0,
 						  0x00af9a000000ffff,
 						  0x00cf92000000ffff};
 
+int64_t load_avg = 0;
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -468,6 +470,21 @@ init_thread(struct thread *t, const char *name, int priority)
 	t->original_priority = priority;
 	t->pending_lock = NULL;
 	t->magic = THREAD_MAGIC;
+
+	if (thread_mlfqs)
+	{
+		if (t == initial_thread)
+		{
+			t->nice = 0;
+			t->recent_cpu = 0;
+		}
+		else if (t != initial_thread)
+		{
+			t->nice = thread_current()->nice;
+			t->recent_cpu = thread_current()->recent_cpu;
+		}
+	}
+
 	list_init(&t->donations);
 }
 

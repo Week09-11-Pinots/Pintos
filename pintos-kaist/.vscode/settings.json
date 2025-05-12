@@ -8,6 +8,20 @@
   "terminal.integrated.defaultProfile.linux": "bash-with-activate",
   "files.associations": {
     "*.ejs": "html",
-    "thread.h": "c"
+    "thread.h": "c",
+    "*.inc": "c",
+    "compare": "c",
+    "deque": "c",
+    "string": "c",
+    "vector": "c",
+    "memory_resource": "c",
+    "functional": "c",
+    "memory": "c",
+    "ostream": "c",
+    "string_view": "c",
+    "tuple": "c",
+    "type_traits": "c",
+    "typeinfo": "c",
+    "algorithm": "c"
   }
 }

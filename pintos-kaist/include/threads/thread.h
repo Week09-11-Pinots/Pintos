@@ -99,6 +99,9 @@ struct thread
 	struct list donations; /* 자신한테 기부해준 리스트 */
 	struct lock *pending_lock;
 
+	int nice;		// 양보하려는 정도?
+	int recent_cpu; // CPU를 얼마나 점유했나?
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4; /* Page map level 4 */
