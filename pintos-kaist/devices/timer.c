@@ -94,7 +94,7 @@ timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
-bool compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
+bool cmp_waketick(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
 	struct thread *t_a = list_entry(a, struct thread, elem);
 	struct thread *t_b = list_entry(b, struct thread, elem);
 	return t_a->wakeup_tick<t_b->wakeup_tick;
@@ -115,7 +115,7 @@ timer_sleep (int64_t ticks) {
 		closest_tick=cur->wakeup_tick; //깨울 틱 설정 
 	}
 
-    list_insert_ordered(&sleep_list, &cur->elem, compare, NULL);
+    list_insert_ordered(&sleep_list, &cur->elem, cmp_waketick, NULL);
     thread_block();
 
     intr_set_level(old_level);

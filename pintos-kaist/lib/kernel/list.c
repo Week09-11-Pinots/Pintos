@@ -155,6 +155,7 @@ list_tail (struct list *list) {
    list_push_back(). */
 void
 list_insert (struct list_elem *before, struct list_elem *elem) {
+	//하나의 list_elem은 한 번에 하나의 리스트에만 들어갈 수 있다. 
 	ASSERT (is_interior (before) || is_tail (before));
 	ASSERT (elem != NULL);
 

@@ -223,6 +223,8 @@ disk_read (struct disk *d, disk_sector_t sec_no, void *buffer) {
 		PANIC ("%s: disk read failed, sector=%"PRDSNu, d->name, sec_no);
 	input_sector (c, buffer);
 	d->read_cnt++;
+	printf("dist_wirte\n");
+
 	lock_release (&c->lock);
 }
 
@@ -247,6 +249,7 @@ disk_write (struct disk *d, disk_sector_t sec_no, const void *buffer) {
 	output_sector (c, buffer);
 	sema_down (&c->completion_wait);
 	d->write_cnt++;
+	printf("dist_wirte\n");
 	lock_release (&c->lock);
 }
 

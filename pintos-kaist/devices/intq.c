@@ -41,6 +41,7 @@ intq_getc (struct intq *q) {
 		ASSERT (!intr_context ());
 		lock_acquire (&q->lock);
 		wait (q, &q->not_empty);
+		printf("intq getc\n");
 		lock_release (&q->lock);
 	}
 
@@ -61,6 +62,8 @@ intq_putc (struct intq *q, uint8_t byte) {
 		ASSERT (!intr_context ());
 		lock_acquire (&q->lock);
 		wait (q, &q->not_full);
+		printf("intq putc\n");
+
 		lock_release (&q->lock);
 	}
 

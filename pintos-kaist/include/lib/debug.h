@@ -36,3 +36,9 @@ void debug_backtrace (void);
 #define ASSERT(CONDITION) ((void) 0)
 #define NOT_REACHED() for (;;)
 #endif /* lib/debug.h */
+
+#ifdef DEBUG_LOG
+#define dprintf(...) printf(__VA_ARGS__)
+#else
+#define dprintf(...) ((void)0)
+#endif

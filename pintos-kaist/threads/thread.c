@@ -62,6 +62,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+void test_max_priority(void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -109,6 +110,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -161,6 +163,16 @@ thread_print_stats (void) {
 			idle_ticks, kernel_ticks, user_ticks);
 }
 
+void print_ready_list(void) {
+    struct list_elem *e;
+    printf("=== Ready List 상태 ===\n");
+    for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+        struct thread *t = list_entry(e, struct thread, elem);
+        printf("  Thread name: %s, priority: %d\n", t->name, t->priority);
+    }
+    printf("======================\n");
+}
+
 /* Creates a new kernel thread named NAME with the given initial
    PRIORITY, which executes FUNCTION passing AUX as the argument,
    and adds it to the ready queue.  Returns the thread identifier
@@ -176,6 +188,16 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
+
+/* NAME이라고 이름 붙인 새로운 커널 스레드를 생성한다. 이 커널 스레드는 주어진 PRIORITY값의 우선순위를 가지며,
+함수 FUNCTION을 AUX라는 인자를 넣어 실행시키며, 레디큐에 추가된다. 반환값은 새로운 스레드를 위한 구분자거나, 
+생성에 실패앴을 경우 TID_ERROR이다.
+
+만약 thread_start()가 호출되었다면, 새로운 스래드는 thread_create가 리턴되기 전에 스케쥴 될 수 있다. 
+심지어 새로운 스레드는 return 되기 전에 종료될 수 있다. 반면에, 기존의 스레드는 새로운 스레드가 스케쥴 되기 전
+짧은 시간동안 실행될 것이다. 순서를 지키기 위해서는 세마포어나 다른 종류의 동기화를 사용해야 한다.
+
+*/
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
@@ -185,6 +207,7 @@ thread_create (const char *name, int priority,
 	ASSERT (function != NULL);
 
 	/* Allocate thread. */
+	
 	t = palloc_get_page (PAL_ZERO);
 	if (t == NULL)
 		return TID_ERROR;
@@ -206,6 +229,14 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+	// print_ready_list();
+	
+	/* 현재 실행중인 스레드와 ready_list에 새로 삽입된 스레드의 우선순위를 비교한다.
+	새로 들어온 스레드의 우선순위가 더 높으면 thread_yield()을 호출  */
+
+	if(!intr_context() && priority>= thread_current()->priority)
+		thread_yield();
+
 
 	return tid;
 }
@@ -232,6 +263,8 @@ thread_block (void) {
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
+
+
 void
 thread_unblock (struct thread *t) {
 	enum intr_level old_level;
@@ -240,7 +273,9 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+
+	list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
+
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -294,6 +329,7 @@ thread_exit (void) {
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
+//다른 스레드에게 cpu 양보함. 
 void
 thread_yield (void) {
 	struct thread *curr = thread_current ();
@@ -303,15 +339,20 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, cmp_priority, NULL);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
 
+
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	struct thread *t = thread_current();
+	t->priority=new_priority;
+	refresh_priority();
+	test_max_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -346,6 +387,19 @@ thread_get_recent_cpu (void) {
 	/* TODO: Your implementation goes here */
 	return 0;
 }
+
+//ready_list에서 우선순위가 가장 높은 스레드와 현재 스레드의 우선순위를 비교하여 스케쥴링 
+void 
+test_max_priority(void) {
+	//리스트 비면 아무것도 안함 
+    if (list_empty(&ready_list))
+        return;
+
+    if (!intr_context() && cmp_priority(list_front(&ready_list), &thread_current()->elem, NULL)) {
+        thread_yield();
+    }
+}
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -409,6 +463,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	t->init_priority = priority;       // 원래 우선순위 저장
+    t->wait_on_lock = NULL;            // 락 대기 없음
+    list_init(&t->donations);          // donation 리스트 초기화
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -567,7 +624,9 @@ schedule (void) {
 		   schedule(). */
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
 			ASSERT (curr != next);
-			list_push_back (&destruction_req, &curr->elem);
+			list_insert_ordered(&destruction_req,&curr->elem, cmp_priority, NULL);
+
+			
 		}
 
 		/* Before switching the thread, we first save the information

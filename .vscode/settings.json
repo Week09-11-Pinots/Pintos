@@ -7,8 +7,14 @@
     },
     "terminal.integrated.defaultProfile.linux": "bash-with-activate",
     "files.associations": {
-        "initializer_list": "c",
-        "limits": "c",
-        "type_traits": "c"
+      "initializer_list": "c",
+      "limits": "c",
+      "type_traits": "c",
+      "timer.h": "c",
+      "synch.h": "c",
+      "debug.h": "c",
+      "serial.h": "c",
+      "thread.h": "c",
+      "*.inc": "c"
     }
   }
