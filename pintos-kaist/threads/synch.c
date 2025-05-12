@@ -242,7 +242,6 @@ void lock_acquire(struct lock *lock)
 		pending = holder->pending_lock; // 홀더가 대기하는 다른 락 확인
 	}
 
-	// compare_cur_next_priority(); // 우선순위가 기부되었으니 스케줄링 새로 실행
 	sema_down(&lock->semaphore); // 락을 잡으려고 시도하고, 이미 잡혀있다면 대기함
 	cur->pending_lock = NULL;
 	lock->holder = thread_current(); // 현재 스레드가 락을 잡음
@@ -289,16 +288,6 @@ void lock_release(struct lock *lock)
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
 	ASSERT(lock->holder != NULL);
-
-	// if (strcmp(lock->holder->name, "medium") == 0)
-	// {
-	// 	dprintf("Medium lock release\n");
-	// 	dprintf("lock holder = %s\n", lock->holder->name);
-	// 	if (lock->holder->pending_lock == NULL)
-	// 		dprintf("holder's pending lock is NULL\n");
-	// 	else
-	// 		dprintf("holder's pending lock holder is %s", lock->holder->pending_lock->holder->name);
-	// }
 
 	remove_donation_for_lock(lock);
 
