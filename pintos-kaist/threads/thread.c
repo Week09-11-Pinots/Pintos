@@ -350,7 +350,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	struct thread *t = thread_current();
-	t->priority=new_priority;
+	t->init_priority=new_priority;
 	refresh_priority();
 	test_max_priority();
 }

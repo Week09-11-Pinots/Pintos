@@ -2,5 +2,5 @@ FAIL
 Some tick counts were missing or differed from those expected by more than 50.
 thread   actual <-> expected explanation
 ------ -------- --- -------- ----------------------------------------
-     0     1489 <<< 1904     Too small, by 365.
-     1     1495 >>> 1096     Too big, by 349.
+     0     1501 <<< 1904     Too small, by 353.
+     1     1501 >>> 1096     Too big, by 355.

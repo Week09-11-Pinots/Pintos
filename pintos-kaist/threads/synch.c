@@ -144,8 +144,8 @@ void sema_up (struct semaphore *sema) {
 					struct thread, elem));
 	}
 	sema->value++;
-	test_max_priority();
 	intr_set_level (old_level);
+	test_max_priority();
 }
 
 static void sema_test_helper (void *sema_);
@@ -235,6 +235,7 @@ lock_acquire (struct lock *lock) {
 		// printf("현재 스레드: %s (tid: %d, priority: %d)\n",
 		// 	cur->name, cur->tid, cur->priority);
 		//holder에게 우선순위 기부 
+		cur->wait_on_lock=lock;
 		donate_priority(lock);
 	}
 
