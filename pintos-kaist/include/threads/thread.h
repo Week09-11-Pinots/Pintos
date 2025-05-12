@@ -96,9 +96,7 @@ struct thread
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem; /* List element. */
-	// struct list_elem d_elem;  /* 기부 리스트 엘리먼트 */
 	struct list donations; /* 자신한테 기부해준 리스트 */
-	// struct lock wait_on_lock; /* 대기중인 락 */
 	struct lock *pending_lock;
 
 #ifdef USERPROG
@@ -149,5 +147,13 @@ int thread_get_load_avg(void);
 void compare_cur_next_priority(void);
 
 void do_iret(struct intr_frame *tf);
+
+typedef struct __donation__
+{
+	struct list_elem elem;
+	int priority;
+	struct thread *donor;
+	struct lock *lock;
+} donation;
 
 #endif /* threads/thread.h */

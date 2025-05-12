@@ -1,14 +1,19 @@
 {
+  "version": "0.2.0",
   "configurations": [
     {
-      "type": "gdb",
-      "request": "attach",
-      "name": "Attach to Pintos GDB",
-      "executable": "${workspaceFolder}/threads/build/kernel.o",
-      "target": "localhost:1234",
-      "remote": true,
-      "cwd": "${workspaceFolder}",
-      "valuesFormatting": "parseText"
+      "name": "Pintos GDB",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/threads/build/kernel.o",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "miDebuggerServerAddress": "localhost:1234",
+      "cwd": "${workspaceFolder}/threads/build",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "sourceFileMap": {
+        "/home/gooch123/pintos_lab_docker/pintos-kaist/threads": "${workspaceFolder}/threads"
+      }
     }
   ]
 }
