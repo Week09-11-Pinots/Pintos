@@ -28,10 +28,12 @@ struct lock {
 	struct semaphore semaphore; /* Binary semaphore controlling access. */
 };
 
+bool thread_compare_donate_priority (const struct list_elem *l, const struct list_elem *s, void *aux);
 void lock_init (struct lock *);
 void lock_acquire (struct lock *);
 bool lock_try_acquire (struct lock *);
-void lock_release (struct lock *);
+// void lock_release (struct lock *);
+void lock_release (struct lock *lock) ;
 bool lock_held_by_current_thread (const struct lock *);
 
 /* Condition variable. */
@@ -44,8 +46,9 @@ void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
 
+bool cmp_sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux );
 bool cmp_priority(const struct list_elem *, const struct list_elem *, void *aux );
-void donate_priority(struct lock *lock);
+void donate_priority();
 void remove_with_lock(struct lock *lock);
 void refresh_priority(void);
 

@@ -234,8 +234,10 @@ thread_create (const char *name, int priority,
 	/* 현재 실행중인 스레드와 ready_list에 새로 삽입된 스레드의 우선순위를 비교한다.
 	새로 들어온 스레드의 우선순위가 더 높으면 thread_yield()을 호출  */
 
-	if(!intr_context() && priority>= thread_current()->priority)
+	if(!intr_context() && priority>= thread_current()->priority){
 		thread_yield();
+
+	}
 
 
 	return tid;
@@ -331,6 +333,7 @@ thread_exit (void) {
    may be scheduled again immediately at the scheduler's whim. */
 //다른 스레드에게 cpu 양보함. 
 void
+
 thread_yield (void) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;

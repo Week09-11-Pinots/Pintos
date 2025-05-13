@@ -226,21 +226,17 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT(!lock_held_by_current_thread(lock));
 
-	struct thread *cur = thread_current();
 
-	//이미 다른 스레드가 락을 소유하고 있어서 락 획득 못한 경우에 
-	if(!lock_held_by_current_thread (lock) && lock->holder!=NULL){
-		// printf("현재 락을 소지 중인 스레드: %s (tid: %d, priority: %d)\n",
-		// 	lock->holder->name, lock->holder->tid, lock->holder->priority);
-		// printf("현재 스레드: %s (tid: %d, priority: %d)\n",
-		// 	cur->name, cur->tid, cur->priority);
-		//holder에게 우선순위 기부 
-		cur->wait_on_lock=lock;
-		donate_priority(lock);
+	struct thread *cur = thread_current();
+	if (lock->holder){
+		cur->wait_on_lock = lock;
+		list_insert_ordered(&lock->holder->donations, &cur->d_elem, thread_compare_donate_priority, 0);
+		donate_priority();
 	}
 
-	sema_down (&lock->semaphore);
-	cur->wait_on_lock=NULL;
+	sema_down(&lock->semaphore);
+
+	cur->wait_on_lock = NULL;
 	lock->holder = cur;
 }
 
@@ -269,20 +265,31 @@ lock_try_acquire (struct lock *lock) {
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
-void
-lock_release (struct lock *lock) {
+// void
+// lock_release (struct lock *lock) {
+// 	ASSERT (lock != NULL);
+// 	ASSERT (lock_held_by_current_thread (lock));
+
+// 	// printf("lock release\n");
+
+// 	if(!list_empty(&thread_current()->donations)){
+// 		//해당 락과 관련된 donation을 리스트에서 제거 
+// 		remove_with_lock(lock);
+	
+// 		// //priority 재계산 
+// 		refresh_priority();
+// 	}
+
+// 	lock->holder = NULL;
+// 	sema_up (&lock->semaphore);
+// }
+
+void lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
-	// printf("lock release\n");
-
-	if(!list_empty(&thread_current()->donations)){
-		//해당 락과 관련된 donation을 리스트에서 제거 
-		remove_with_lock(lock);
-	
-		// //priority 재계산 
-		refresh_priority();
-	}
+	remove_with_lock(lock);
+	refresh_priority();
 
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
@@ -368,6 +375,19 @@ cond_wait (struct condition *cond, struct lock *lock) {
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to signal a condition variable within an
    interrupt handler. */
+
+bool cmp_sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+    struct semaphore_elem *s_a = list_entry(a, struct semaphore_elem, elem);
+    struct semaphore_elem *s_b = list_entry(b, struct semaphore_elem, elem);
+
+    // 각 세마포어의 waiters 리스트에서 가장 앞(=가장 높은 priority)의 스레드 기준
+    struct thread *t_a = list_entry(list_front(&s_a->semaphore.waiters), struct thread, elem);
+    struct thread *t_b = list_entry(list_front(&s_b->semaphore.waiters), struct thread, elem);
+
+    return t_a->priority > t_b->priority;
+}
+
+
 void
 cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (cond != NULL);
@@ -376,7 +396,7 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	if (!list_empty (&cond->waiters)){
-		list_sort(&cond->waiters, cmp_priority, NULL);
+		list_sort(&cond->waiters, cmp_sema_priority, NULL);
 		sema_up (&list_entry (list_pop_front (&cond->waiters),
 					struct semaphore_elem, elem)->semaphore);
 		
@@ -400,36 +420,21 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 
 //현재 스레드가 기다리고 있는 락의 holder에게 자신의 우선순위를 기부함. 
 //중첩 기부 상황도 8단계까지 재귀처리 가능. 
-void donate_priority(struct lock *lock){
-	struct thread *cur = thread_current();
-	int depth=0;
-	const int MAX_DEPTH=8;
+void donate_priority (void)
+{
+  int depth;
+  const int MAX_DEPTH=8;
 
-	//현재 스레드의 wait_on_lock을 lock으로 설정함
-	thread_current()->wait_on_lock=lock;
+  struct thread *cur = thread_current ();
 
-
-	while(cur->wait_on_lock!=NULL && depth<MAX_DEPTH){
-		struct thread *holder = cur->wait_on_lock->holder;
-
-		if(holder==NULL){
-			break;
-		}
-
-		if(holder->priority<cur->priority){
-			//중복 삽입 방지
-			// list_remove(&cur->d_elem);
-			list_insert_ordered(&holder->donations, &cur->d_elem, cmp_priority, NULL);
-			holder->priority = cur->priority;
-		}
-
-		cur=holder;
-		depth++;
-		
-	}
-
+  for (depth = 0; depth < MAX_DEPTH; depth++){
+    if (!cur->wait_on_lock) break;
+      struct thread *holder = cur->wait_on_lock->holder;
+      holder->priority = cur->priority;
+      cur = holder;
+  }
 }
-//donation 리스트와 자신의 원래 우선순위를 바탕으로 현재 우선순위를 재계산.
+// //donation 리스트와 자신의 원래 우선순위를 바탕으로 현재 우선순위를 재계산.
 void refresh_priority(void){
 
 	struct thread *cur = thread_current();
@@ -452,7 +457,7 @@ void refresh_priority(void){
 	
 }
 
-//락 해제시 해당 락과 관련된 donation을 리스트에서 제거. 
+// //락 해제시 해당 락과 관련된 donation을 리스트에서 제거. 
 void remove_with_lock(struct lock *lock){
 
 	struct thread *cur = thread_current();
@@ -478,3 +483,12 @@ void remove_with_lock(struct lock *lock){
 	
 	intr_set_level(old_level);
 }
+
+
+
+bool thread_compare_donate_priority (const struct list_elem *l, const struct list_elem *s, void *aux UNUSED){
+	return list_entry (l, struct thread, d_elem)->priority > list_entry (s, struct thread, d_elem)->priority;
+}
+
+
+
